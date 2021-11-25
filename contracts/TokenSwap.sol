@@ -30,24 +30,11 @@ contract TokenSwap {
     ) external {
         //first we need to transfer the amount in tokens from the msg.sender to this contract
         //this contract will have the amount of in tokens
-        console.log(
-            "TokenIn %s TokenOut %s AmountIn %s ",
-            _tokenIn,
-            _tokenOut,
-            _amountIn
-        );
-        console.log(
-            "sender balance %s contract balance %s",
-            IERC20(_tokenIn).balanceOf(msg.sender),
-            IERC20(_tokenIn).balanceOf(address(this))
-        );
         IERC20(_tokenIn).transferFrom(msg.sender, address(this), _amountIn);
 
-        console.log("After transfer from");
         //next we need to allow the uniswapv2 router to spend the token we just sent to this contract
         //by calling IERC20 approve you allow the uniswap contract to spend the tokens in this contract
         IERC20(_tokenIn).approve(_router, _amountIn);
-        console.log("After approve");
 
         //path is an array of addresses.
         //this path array will have 3 addresses [tokenIn, WETH, tokenOut]
@@ -63,7 +50,6 @@ contract TokenSwap {
             path[1] = weth;
             path[2] = _tokenOut;
         }
-        console.log("path %s ", path.length);
         //then we will call swapExactTokensForTokens
         //for the deadline we will pass in block.timestamp
         //the deadline is the latest time the trade is valid for
