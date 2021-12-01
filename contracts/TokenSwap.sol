@@ -6,6 +6,8 @@ import "./IERC20.sol";
 import "./IUniswapV2Router.sol";
 
 contract TokenSwap {
+    event Swap(address router, uint256 amount);
+
     //address of WETH token (or WBNB)
     address private weth;
 
@@ -18,24 +20,19 @@ contract TokenSwap {
     //token in = the token address you want to trade out of
     //token out = the token address you want as the output of this trade
     //amount in = the amount of tokens you are sending in
-    //amount out Min = the minimum amount of tokens you want out of the trade
     //to = the address you want the tokens to be sent to
+    //routers = array of UniswapV2 like routers where the function will look for the best price
     function swap(
         address _tokenIn,
         address _tokenOut,
         uint256 _amountIn,
-        uint256 _amountOutMin,
         address _to,
-        address _router
+        address[] memory _routers
     ) external {
         //first we need to transfer the amount in tokens from the msg.sender to this contract
         //this contract will have the amount of in tokens
         IERC20(_tokenIn).transferFrom(msg.sender, address(this), _amountIn);
 
-        //next we need to allow the uniswapv2 router to spend the token we just sent to this contract
-        //by calling IERC20 approve you allow the uniswap contract to spend the tokens in this contract
-        IERC20(_tokenIn).approve(_router, _amountIn);
-
         //path is an array of addresses.
         //this path array will have 3 addresses [tokenIn, WETH, tokenOut]
         //the if statement below takes into account if token in or token out is WETH.  then the path is only 2 addresses
@@ -50,44 +47,42 @@ contract TokenSwap {
             path[1] = weth;
             path[2] = _tokenOut;
         }
+
+        address router = address(0);
+        uint256 amountOutMin = 0;
+
+        // we look among exchanges (routers) the one that would give the most token as the result of the swap:
+        // this is the best price
+        for (uint256 i = 0; i < _routers.length; i++) {
+            // amountOutMins is the array of swap results along the path
+            uint256[] memory amountOutMins = IUniswapV2Router(_routers[i])
+                .getAmountsOut(_amountIn, path);
+            // we are interested only in the end result
+            if (amountOutMins[path.length - 1] > amountOutMin) {
+                router = _routers[i];
+                amountOutMin = amountOutMins[path.length - 1];
+            }
+        }
+
+        require(router != address(0), "no router to swap");
+
+        //next we need to allow the uniswapv2 router to spend the token we just sent to this contract
+        //by calling IERC20 approve you allow the uniswap contract to spend the tokens in this contract
+        IERC20(_tokenIn).approve(router, _amountIn);
         //then we will call swapExactTokensForTokens
         //for the deadline we will pass in block.timestamp
         //the deadline is the latest time the trade is valid for
-        IUniswapV2Router(_router).swapExactTokensForTokens(
-            _amountIn,
-            _amountOutMin,
-            path,
-            _to,
-            block.timestamp
-        );
-    }
+        uint256[] memory amounts = IUniswapV2Router(router)
+            .swapExactTokensForTokens(
+                _amountIn,
+                amountOutMin,
+                path,
+                _to,
+                block.timestamp
+            );
 
-    //this function will return the minimum amount from a swap
-    //input the 3 parameters below and it will return the minimum amount out
-    //this is needed for the swap function above
-    function getAmountOutMin(
-        address _tokenIn,
-        address _tokenOut,
-        uint256 _amountIn,
-        address _router
-    ) external view returns (uint256) {
-        //path is an array of addresses.
-        //this path array will have 3 addresses [tokenIn, WETH, tokenOut]
-        //the if statement below takes into account if token in or token out is WETH.  then the path is only 2 addresses
-        address[] memory path;
-        if (_tokenIn == weth || _tokenOut == weth) {
-            path = new address[](2);
-            path[0] = _tokenIn;
-            path[1] = _tokenOut;
-        } else {
-            path = new address[](3);
-            path[0] = _tokenIn;
-            path[1] = weth;
-            path[2] = _tokenOut;
-        }
+        uint256 amount = amounts[amounts.length - 1];
 
-        uint256[] memory amountOutMins = IUniswapV2Router(_router)
-            .getAmountsOut(_amountIn, path);
-        return amountOutMins[path.length - 1];
+        emit Swap(router, amount);
     }
 }
